@@ -67,29 +67,30 @@ class Player:
         return dx, dy
 
     def is_wall(self, x, y):
-        # Use floor division to handle negative coordinates properly
+        # Standardize check with small padding
         x1 = int(x // 8)
         y1 = int(y // 8)
-        x2 = int((x + self.width - 0.05) // 8)
-        y2 = int((y + self.height - 0.05) // 8)
+        x2 = int((x + self.width - 0.1) // 8)
+        y2 = int((y + self.height - 0.1) // 8)
         
         for ty in range(y1, y2 + 1):
+            if not (0 <= ty < 16): continue # Allow passing vertical bounds
             for tx in range(x1, x2 + 1):
-                # Bounds check for safety
-                if 0 <= tx < 16 and 0 <= ty < 16:
-                    if pyxel.tilemaps[0].pget(tx, ty) == (1, 0):
-                        return True
+                if not (0 <= tx < 16): continue # Allow passing horizontal bounds
+                if pyxel.tilemaps[0].pget(tx, ty) == (1, 0):
+                    return True
         return False
 
     def resolve_overlap(self):
-        # Emergency push-out if stuck
+        # If stuck, search for the nearest free pixel in a spiral
         if self.is_wall(self.x, self.y):
-            for i in range(1, 9):
-                for dx, dy in [(0, -1), (0, 1), (-1, 0), (1, 0)]:
-                    if not self.is_wall(self.x + dx * i, self.y + dy * i):
-                        self.x += dx * i
-                        self.y += dy * i
-                        return
+            for r in range(1, 16):
+                for dx in range(-r, r + 1):
+                    for dy in range(-r, r + 1):
+                        if not self.is_wall(self.x + dx, self.y + dy):
+                            self.x += dx
+                            self.y += dy
+                            return
                     
     def update(self, particles):
         # Ensure we stay out of walls before moving
@@ -281,11 +282,17 @@ class App:
             "BGM/ComfyUI_00004_.mp3"
         ]
         self.bgm_timer = 0
+        self.bgm_idx = 0 # 0 or 1
+        self.bgm_channels = [0, 1]
+        self.bgm_sounds = [62, 63]
+        self.bgm_volumes = [0.0, 0.0]
+        self.target_volumes = [0.0, 0.0]
 
         self.room_x = 0
         self.room_y = 0
         self.rooms_data = {}
         self.particles = []
+        self.orbs = [] # Ensure this exists before generate_room
         self.shake = 0
         self.player = Player(W // 2, H // 2)
         self.started = False # Wait for first click to start BGM/Logic
@@ -296,19 +303,35 @@ class App:
 
     def play_random_bgm(self):
         try:
-            bgm = random.choice(self.bgm_files)
-            pyxel.sounds[63].pcm(bgm)
-            pyxel.channels[0].gain = 0.4
-            pyxel.play(0, 63, loop=False) # Play once to detect end
-            # Estimate duration: MP3s are ~1.9MB, roughly 120 seconds if ~128kbps
-            # pcm() method might provide total_sec() in newer Pyxel
-            dur = pyxel.sounds[63].total_sec()
-            if dur:
-                self.bgm_timer = int(dur * 30) # 30 fps
+            # Alternate index
+            old_idx = self.bgm_idx
+            self.bgm_idx = 1 - self.bgm_idx
+            
+            base_dir = os.path.dirname(__file__)
+            bgm_rel = random.choice(self.bgm_files)
+            bgm_path = os.path.join(base_dir, bgm_rel)
+            
+            snd_slot = self.bgm_sounds[self.bgm_idx]
+            ch_idx = self.bgm_channels[self.bgm_idx]
+            
+            # Load and Start (at 0 volume)
+            if os.path.exists(bgm_path):
+                pyxel.sounds[snd_slot].pcm(bgm_path)
             else:
-                self.bgm_timer = 30 * 120 # Fallback 2 mins
-        except Exception:
-            self.bgm_timer = 30 * 5 # Retry in 5s if failed
+                pyxel.sounds[snd_slot].pcm(bgm_rel)
+                
+            pyxel.channels[ch_idx].gain = 0.0
+            pyxel.play(ch_idx, snd_slot, loop=False)
+            
+            # Set Target Volumes for crossfade
+            self.target_volumes[self.bgm_idx] = 0.4 # Fade in
+            self.target_volumes[old_idx] = 0.0 # Fade out
+            
+            dur = pyxel.sounds[snd_slot].total_sec()
+            self.bgm_timer = int(dur * 30) if dur else 30 * 120
+        except Exception as e:
+            print(f"BGM Error: {e}")
+            self.bgm_timer = 30 * 5
 
     def generate_room(self, rx, ry):
         import random
@@ -331,12 +354,18 @@ class App:
                     tm.pset(x, y, (1, 0))
 
         # Random platforms
-        for _ in range(6):
-            px = random.randint(2, (W // TILE_SIZE) - 6)
-            py = random.randint(2, (H // TILE_SIZE) - 6)
-            pw = random.randint(3, 5)
+        for _ in range(8):
+            px = random.randint(1, (W // TILE_SIZE) - 4)
+            py = random.randint(1, (H // TILE_SIZE) - 2)
+            # SAFETY: Skip platforms that block the middle spawn/path areas
+            # Exit holes are at tiles 6-9. Protecting 5-10 range.
+            if 5 <= px <= 10 or 5 <= py <= 10:
+                continue
+            
+            pw = random.randint(2, 4)
             for i in range(pw):
-                tm.pset(px + i, py, (1, 0))
+                if 0 < px + i < 15:
+                    tm.pset(px + i, py, (1, 0))
 
         # Room-specific orbs
         if (rx, ry) not in self.rooms_data:
@@ -357,12 +386,22 @@ class App:
                 self.play_random_bgm()
             return
 
-        # BGM Timer
+        # BGM Crossfade & Timer
+        for i in range(2):
+            if self.bgm_volumes[i] < self.target_volumes[i]:
+                self.bgm_volumes[i] = min(self.bgm_volumes[i] + 0.005, self.target_volumes[i])
+            elif self.bgm_volumes[i] > self.target_volumes[i]:
+                self.bgm_volumes[i] = max(self.bgm_volumes[i] - 0.005, self.target_volumes[i])
+            
+            pyxel.channels[self.bgm_channels[i]].gain = self.bgm_volumes[i]
+            if self.bgm_volumes[i] == 0:
+                pyxel.stop(self.bgm_channels[i])
+
         if self.bgm_timer > 0:
             self.bgm_timer -= 1
             if self.bgm_timer <= 0:
                 self.play_random_bgm()
-        elif pyxel.play_pos(0) is None: # Reliable end detection
+        elif pyxel.play_pos(self.bgm_channels[self.bgm_idx]) is None:
             self.play_random_bgm()
 
         if pyxel.btnp(pyxel.KEY_Q):
@@ -375,20 +414,20 @@ class App:
         changed = False
         if self.player.x < -margin:
             self.room_x -= 1
-            self.player.x = W - self.player.width - 2
+            self.player.x = W - self.player.width - 12
             changed = True
         elif self.player.x > W - self.player.width + margin:
             self.room_x += 1
-            self.player.x = 2
+            self.player.x = 12
             changed = True
         
         if self.player.y < -margin:
             self.room_y -= 1
-            self.player.y = H - self.player.height - 2
+            self.player.y = H - self.player.height - 12
             changed = True
         elif self.player.y > H + margin:
             self.room_y += 1
-            self.player.y = 2
+            self.player.y = 12
             changed = True
             
         if changed:
