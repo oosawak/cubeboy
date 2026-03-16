@@ -298,3 +298,35 @@ footer {
     opacity: 1;
     transform: translateY(0px);
 }
+
+/* Responsive Scaling */
+@media (max-width: 768px) {
+    .hero h1 {
+        font-size: 3.5rem;
+    }
+    .hero p {
+        font-size: 1.1rem;
+    }
+    .hero-btns {
+        flex-direction: column;
+        align-items: center;
+        width: 100%;
+        padding: 0 20px;
+    }
+    .btn {
+        width: 100%;
+        text-align: center;
+    }
+    .section-title {
+        font-size: 2rem;
+    }
+    .feature-grid, .gallery-grid {
+        grid-template-columns: 1fr;
+    }
+}
+
+@media (max-width: 480px) {
+    .hero h1 {
+        font-size: 2.8rem;
+    }
+}
