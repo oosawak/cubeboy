@@ -12,6 +12,16 @@ COLOR_PLAYER_READY = 7
 COLOR_PLAYER_SPENT = 14
 COLOR_PARTICLE = 12
 COLOR_ORB = 10
+COLOR_SPIKE = 7
+COLOR_CRYSTAL = 12
+COLOR_MOUNTAIN_1 = 1
+COLOR_MOUNTAIN_2 = 13
+STATE_START = 0
+STATE_PLAY = 1
+STATE_BOSS = 2
+STATE_GAMEOVER = 3
+STATE_GAMECLEAR = 4
+STATE_GAMEOVER_SEQ = 5
 
 class Particle:
     def __init__(self, x, y, dx, dy, col, life):
@@ -54,15 +64,20 @@ class Player:
         self.stretch_x = 1.0
         self.stretch_y = 1.0
         self.facing = 1 # 1 right, -1 left
+        self.is_dead = False
 
     def get_input(self):
         dx = 0
-        if pyxel.btn(pyxel.KEY_LEFT) or pyxel.btn(pyxel.KEY_A) or pyxel.btn(pyxel.GAMEPAD1_BUTTON_DPAD_LEFT): dx -= 1
-        if pyxel.btn(pyxel.KEY_RIGHT) or pyxel.btn(pyxel.KEY_D) or pyxel.btn(pyxel.GAMEPAD1_BUTTON_DPAD_RIGHT): dx += 1
+        if pyxel.btn(pyxel.KEY_LEFT) or pyxel.btn(pyxel.KEY_A) or pyxel.btn(pyxel.GAMEPAD1_BUTTON_DPAD_LEFT):
+            dx -= 1
+        if pyxel.btn(pyxel.KEY_RIGHT) or pyxel.btn(pyxel.KEY_D) or pyxel.btn(pyxel.GAMEPAD1_BUTTON_DPAD_RIGHT):
+            dx += 1
         
         dy = 0
-        if pyxel.btn(pyxel.KEY_UP) or pyxel.btn(pyxel.KEY_W) or pyxel.btn(pyxel.GAMEPAD1_BUTTON_DPAD_UP): dy -= 1
-        if pyxel.btn(pyxel.KEY_DOWN) or pyxel.btn(pyxel.KEY_S) or pyxel.btn(pyxel.GAMEPAD1_BUTTON_DPAD_DOWN): dy += 1
+        if pyxel.btn(pyxel.KEY_UP) or pyxel.btn(pyxel.KEY_W) or pyxel.btn(pyxel.GAMEPAD1_BUTTON_DPAD_UP):
+            dy -= 1
+        if pyxel.btn(pyxel.KEY_DOWN) or pyxel.btn(pyxel.KEY_S) or pyxel.btn(pyxel.GAMEPAD1_BUTTON_DPAD_DOWN):
+            dy += 1
         
         return dx, dy
 
@@ -130,6 +145,7 @@ class Player:
             
             # Jump Input Buffer
             if (pyxel.btnp(pyxel.KEY_SPACE) or pyxel.btnp(pyxel.KEY_Z) or 
+                pyxel.btnp(pyxel.KEY_W) or pyxel.btnp(pyxel.KEY_UP) or
                 pyxel.btnp(pyxel.KEY_C) or pyxel.btnp(pyxel.GAMEPAD1_BUTTON_A)):
                 self.jump_buffer = 4
             
@@ -152,6 +168,7 @@ class Player:
             
             # Dash Input
             if (pyxel.btnp(pyxel.KEY_X) or pyxel.btnp(pyxel.KEY_V) or 
+                pyxel.btnp(pyxel.KEY_LCTRL) or pyxel.btnp(pyxel.KEY_RCTRL) or
                 pyxel.btnp(pyxel.GAMEPAD1_BUTTON_X) or pyxel.btnp(pyxel.GAMEPAD1_BUTTON_B)) and self.can_dash:
                 idx, idy = self.get_input()
                 if idx == 0 and idy == 0: idx = self.facing
@@ -207,6 +224,10 @@ class Player:
         # Visual Polish - Recover stretch
         self.stretch_x += (1.0 - self.stretch_x) * 0.2
         self.stretch_y += (1.0 - self.stretch_y) * 0.2
+        
+        # Death Check (Spikes at (2, 0))
+        if pyxel.tilemaps[0].pget(int((self.x + 3)//8), int((self.y + 3)//8)) == (2, 0):
+            self.is_dead = True
 
     def draw(self):
         u = 0 if self.can_dash else 16
@@ -242,7 +263,11 @@ class Orb:
                 self.active = True
                 self.timer = 0
         else:
-            if abs(player.x - self.x) < 8 and abs(player.y - self.y) < 8:
+            # Enhanced collision: Center-to-center distance check with larger radius
+            dx = (player.x + 3) - (self.x + 4)
+            dy = (player.y + 3) - (self.y + 4)
+            dist = pyxel.sqrt(dx*dx + dy*dy)
+            if dist < 10: # More generous threshold for wall accessibility
                 if not player.can_dash:
                     player.can_dash = True
                     self.active = False
@@ -259,15 +284,64 @@ class Orb:
         else:
             pyxel.circb(self.x + 4, self.y + 4, 2, 5)
 
+class Boss:
+    def __init__(self, x, y):
+        self.x = float(x)
+        self.y = float(y)
+        self.w = 24
+        self.h = 24
+        self.speed = 0.8
+        self.active = False
+        self.color = 8 
+
+    def update(self, player, tm):
+        # Move towards player
+        dx = (player.x + 3) - (self.x + self.w/2)
+        dy = (player.y + 3) - (self.y + self.h/2)
+        dist = pyxel.sqrt(dx*dx + dy*dy)
+        if dist > 0:
+            self.x += (dx / dist) * self.speed
+            self.y += (dy / dist) * self.speed
+        
+        # Destroy tiles on contact
+        tx_start = int(self.x // 8)
+        ty_start = int(self.y // 8)
+        tx_end = int((self.x + self.w) // 8)
+        ty_end = int((self.y + self.h) // 8)
+        
+        for ty in range(ty_start, ty_end + 1):
+            for tx in range(tx_start, tx_end + 1):
+                if 0 <= tx < 16 and 0 <= ty < 16:
+                    if pyxel.tilemaps[0].pget(tx, ty) == (1, 0):
+                        pyxel.tilemaps[0].pset(tx, ty, (0, 0))
+
+    def draw(self):
+        pyxel.rect(self.x, self.y, self.w, self.h, self.color)
+        pyxel.rectb(self.x, self.y, self.w, self.h, 7)
+        # Eyes
+        pyxel.rect(self.x + 4, self.y + 6, 4, 4, 7)
+        pyxel.rect(self.x + 16, self.y + 6, 4, 4, 7)
+
 class App:
     def __init__(self):
-        pyxel.init(W, H, title="Pyxel Celeste Mini")
+        pyxel.init(W, H, title="CubeBoy")
         
         # Setup Visuals in Image Bank
-        # Wall Tile (1, 0)
+        # Wall Tile (1, 0) - Solid dark blue with simple detail
         pyxel.images[0].rect(8, 0, 8, 8, 1)
-        pyxel.images[0].rectb(8, 0, 8, 8, 5)
-        pyxel.images[0].pset(10, 2, 6)
+        pyxel.images[0].pset(10, 2, 5) # Distant grey detail instead of border
+        
+        # Ice Spike (2, 0) - Concept-accurate crystalline spikes
+        # Clear the tile area
+        pyxel.images[0].rect(16, 0, 8, 8, 0)
+        # Crystal 1 (Center-Left)
+        pyxel.images[0].tri(16, 7, 18, 2, 20, 7, 12) # Blue base
+        pyxel.images[0].line(18, 3, 18, 7, 7)         # White core
+        # Crystal 2 (Center-Right)
+        pyxel.images[0].tri(19, 7, 21, 1, 23, 7, 6)  # Purple base
+        pyxel.images[0].line(21, 2, 21, 7, 7)         # White core
+        # Crystal 3 (Edge-Right)
+        pyxel.images[0].tri(21, 7, 22, 3, 23, 7, 12) # Blue base highlight
         
         # Setup Sounds
         pyxel.sounds[0].set("a3a2c1", "p", "7", "v", 5) # Jump
@@ -292,14 +366,36 @@ class App:
         self.room_y = 0
         self.rooms_data = {}
         self.particles = []
-        self.orbs = [] # Ensure this exists before generate_room
+        self.orbs = []
         self.shake = 0
+        self.collected_orbs = 0
+        self.collected_rooms = set()  # Track which rooms have had their orb collected
+        self.boss_countdown = 0
+        self.death_seq_timer = 0
+        self.state = STATE_PLAY
         self.player = Player(W // 2, H // 2)
-        self.started = False # Wait for first click to start BGM/Logic
+        self.boss = Boss(-100, -100)
         
         self.generate_room(0, 0)
         
         pyxel.run(self.update, self.draw)
+
+    def reset_game(self):
+        self.room_x = 0
+        self.room_y = 0
+        self.rooms_data = {}
+        self.particles = []
+        self.orbs = []
+        self.shake = 0
+        self.collected_orbs = 0
+        self.collected_rooms = set()
+        self.boss_countdown = 0
+        self.death_seq_timer = 0
+        
+        self.state = STATE_PLAY
+        self.player = Player(W // 2, H // 2)
+        self.boss = Boss(-100, -100)
+        self.generate_room(0, 0)
 
     def play_random_bgm(self):
         try:
@@ -336,7 +432,7 @@ class App:
     def generate_room(self, rx, ry):
         import random
         state = random.getstate()
-        random.seed(f"{rx}_{ry}_celeste")
+        random.seed(f"{rx}_{ry}_cubeboy")
         
         tm = pyxel.tilemaps[0]
         tm.cls((0, 0))
@@ -347,19 +443,20 @@ class App:
                 is_edge = (x == 0 or x == (W // TILE_SIZE) - 1 or 
                            y == 0 or y == (H // TILE_SIZE) - 1)
                 mid = (W // TILE_SIZE) // 2
-                is_exit = (mid-2 <= x <= mid+1 and (y == 0 or y == (H // TILE_SIZE) - 1)) or \
-                          (mid-2 <= y <= mid+1 and (x == 0 or x == (W // TILE_SIZE) - 1))
+                # Narrow exit: 2 tiles wide (7, 8)
+                is_exit = (7 <= x <= 8 and (y == 0 or y == (H // TILE_SIZE) - 1)) or \
+                          (7 <= y <= 8 and (x == 0 or x == (W // TILE_SIZE) - 1))
                 
                 if is_edge and not is_exit:
                     tm.pset(x, y, (1, 0))
 
-        # Grid-based platform generation (4x4 internal sectors = 16 slots)
-        density = random.uniform(0.4, 0.7)
-        for gy in range(1, 5):
-            for gx in range(1, 5):
+        # Extreme grid-based platform generation (6x6 internal = 36 slots)
+        density = random.uniform(0.7, 0.9)
+        for gy in range(1, 7):
+            for gx in range(1, 7):
                 if random.random() < density:
-                    px = gx * 3 + random.randint(-1, 0)
-                    py = gy * 3 + random.randint(-1, 0)
+                    px = gx * 2 
+                    py = gy * 2 
                     
                     type = random.randint(0, 3)
                     size = random.randint(2, 3) 
@@ -377,31 +474,91 @@ class App:
                             if 0 < py + i < 15: tm.pset(px, py + i, (1, 0))
                     else: # Island
                         tm.pset(px, py, (1, 0))
+                
+        # FINAL PASS: Ensure exits and Respawn are ALWAYS clear
+        # Narrow exits (2 tiles wide) + 1 tile buffer
+        for i in range(7, 9):
+            for j in range(0, 2): tm.pset(i, j, (0, 0)) # Top
+            for j in range(14, 16): tm.pset(i, j, (0, 0)) # Bottom
+        for j in range(7, 9):
+            for i in range(0, 2): tm.pset(i, j, (0, 0)) # Left
+            for i in range(14, 16): tm.pset(i, j, (0, 0)) # Right
 
-        # FINAL PASS: Ensure exits are ALWAYS clear
-        # Middle 4 tiles on each edge
-        for i in range(5, 11):
-            tm.pset(i, 0, (0, 0)) # Top
-            tm.pset(i, 15, (0, 0)) # Bottom
-            tm.pset(0, i, (0, 0)) # Left
-            tm.pset(15, i, (0, 0)) # Right
+        # SAFE ZONE: Center (W//2, H//2) for respawn
+        for i in range(6, 10):
+            for j in range(6, 10):
+                tm.pset(i, j, (0, 0))
 
-        # Room-specific orbs
+        # MOON SANCTUARY: Top-right corner (approx 3x3 tiles) to protect the moon
+        # Moon is drawn at (100, 15) with radius 10, so clearing (12, 1) to (14, 3) 
+        for i in range(11, 15):
+            for j in range(1, 4):
+                tm.pset(i, j, (0, 0))
+
+        # Add Spikes and Crystals with improved placement
+        for _ in range(15):
+            tx, ty = random.randint(1, 14), random.randint(1, 14)
+            # Avoid exit lanes, center safe zone, and MOON SANCTUARY
+            if (tx in [7, 8]) or (ty in [7, 8]) or (6 <= tx <= 9 and 6 <= ty <= 9) or (tx >= 11 and ty <= 3):
+                continue
+
+            if tm.pget(tx, ty) == (0, 0):
+                # Check adjacency to wall for natural look
+                adj_wall = False
+                for dx, dy in [(0,1), (0,-1), (1,0), (-1,0)]:
+                    if tm.pget(tx+dx, ty+dy) == (1, 0):
+                        adj_wall = True
+                        break
+                if adj_wall:
+                    # Only spikes now
+                    tm.pset(tx, ty, (2, 0)) # Spike
+
+        # Room-specific orbs - Reachable placement
         if (rx, ry) not in self.rooms_data:
-            num_orbs = random.randint(1, 2)
             orbs = []
-            for _ in range(num_orbs):
-                orbs.append(Orb(random.randint(20, W-20), random.randint(20, H-20)))
+            # NO ORBS IN START ROOM AND NO ORBS IF ALREADY COLLECTED
+            if not (rx == 0 and ry == 0) and (rx, ry) not in self.collected_rooms: 
+                num_orbs = 1 # EXACTLY ONE PER ROOM
+                for _ in range(num_orbs):
+                    # Try multiple times to find a good spot
+                    for _ in range(20):
+                        ox, oy = random.randint(24, 104), random.randint(24, 104)
+                    tx, ty = ox // 8, oy // 8
+                    # Avoid walls and center zone
+                    if tm.pget(tx, ty) == (0, 0) and not (6 <= tx <= 9 and 6 <= ty <= 9):
+                        # Reachability: Near a wall
+                        near_wall = False
+                        for dx in range(-2, 3):
+                            for dy in range(-2, 3):
+                                if (0 <= tx+dx < 16 and 0 <= ty+dy < 16 and 
+                                    tm.pget(tx+dx, ty+dy) == (1, 0)):
+                                    near_wall = True
+                                    break
+                        if near_wall:
+                            orbs.append(Orb(ox, oy))
+                            break
+            # Fallback if no good spot found (except start room)
+            if not orbs and not (rx == 0 and ry == 0): 
+                orbs.append(Orb(W//2, H//2))
             self.rooms_data[(rx, ry)] = orbs
         
         self.orbs = self.rooms_data[(rx, ry)]
         random.setstate(state)
 
     def update(self):
-        if not self.started:
-            if pyxel.btnp(pyxel.MOUSE_BUTTON_LEFT) or pyxel.btnp(pyxel.KEY_SPACE) or \
-               pyxel.btnp(pyxel.GAMEPAD1_BUTTON_START):
-                self.started = True
+        if self.state == STATE_START:
+            if (pyxel.btnp(pyxel.KEY_SPACE) or pyxel.btnp(pyxel.KEY_Z) or 
+                pyxel.btnp(pyxel.KEY_X) or pyxel.btnp(pyxel.KEY_RETURN) or
+                pyxel.btnp(pyxel.GAMEPAD1_BUTTON_A) or pyxel.btnp(pyxel.GAMEPAD1_BUTTON_START)):
+                self.state = STATE_PLAY
+                self.play_random_bgm()
+            return
+
+        if self.state == STATE_GAMEOVER or self.state == STATE_GAMECLEAR:
+            if (pyxel.btnp(pyxel.KEY_SPACE) or pyxel.btnp(pyxel.KEY_Z) or 
+                pyxel.btnp(pyxel.KEY_X) or pyxel.btnp(pyxel.KEY_RETURN) or
+                pyxel.btnp(pyxel.GAMEPAD1_BUTTON_A) or pyxel.btnp(pyxel.GAMEPAD1_BUTTON_START)):
+                self.reset_game()
                 self.play_random_bgm()
             return
 
@@ -428,38 +585,106 @@ class App:
             
         self.player.update(self.particles)
         
+        if self.state == STATE_GAMEOVER_SEQ:
+            self.death_seq_timer -= 1
+            self.shake = 5
+            self.boss.update(self.player, pyxel.tilemaps[0]) # Keep boss moving for drama
+            # Continuous shattering particles
+            for _ in range(3):
+                self.particles.append(Particle(self.player.x+2 + pyxel.rndf(-4, 4), self.player.y+2 + pyxel.rndf(-4, 4), 
+                                               pyxel.rndf(-2, 2), pyxel.rndf(-2, 2), 
+                                               random.choice([COLOR_PLAYER_READY, COLOR_PARTICLE, 6]), 20))
+            for p in self.particles: p.update()
+            if self.death_seq_timer <= 0:
+                self.state = STATE_GAMEOVER
+            return
+
+        if self.player.is_dead:
+            # Hazard death (spikes, etc.): immediate reset with burst
+            self.shake = 10
+            pyxel.play(3, 1)
+            for _ in range(15):
+                self.particles.append(Particle(self.player.x+4, self.player.y+4, pyxel.rndf(-3, 3), pyxel.rndf(-3, 3), COLOR_PARTICLE, 20))
+            # Reset player
+            self.player.x, self.player.y = W//2, H//2
+            self.player.vx, self.player.vy = 0, 0
+            self.player.is_dead = False
+        
+        # Room(0,0) Exit Reach check
+        if self.state == STATE_BOSS and self.room_x == 0 and self.room_y == 0:
+            if abs(self.player.x - W//2) < 8 and abs(self.player.y - H//2) < 8:
+                self.state = STATE_GAMECLEAR
+                return
+
+        # Boss Logic
+        if self.state == STATE_BOSS:
+            if self.boss_countdown > 0:
+                self.boss_countdown -= 1
+                if self.boss_countdown == 0:
+                    # Spawn Boss at a distance
+                    self.boss.x = self.player.x - 64
+                    self.boss.y = self.player.y - 64
+            else:
+                self.boss.update(self.player, pyxel.tilemaps[0])
+                # Collision
+                if (self.player.x < self.boss.x + self.boss.w and
+                    self.player.x + self.player.width > self.boss.x and
+                    self.player.y < self.boss.y + self.boss.h and
+                    self.player.y + self.player.height > self.boss.y):
+                    self.player.is_dead = True
+                    self.shake = 15
+                    self.state = STATE_GAMEOVER_SEQ
+                    self.death_seq_timer = 150 # 5 seconds at 30fps
+                    pyxel.play(3, 1) # Death sound
+                    for _ in range(40):
+                        self.particles.append(Particle(self.player.x+2, self.player.y+2, pyxel.rndf(-4, 4), pyxel.rndf(-4, 4), COLOR_PLAYER_READY, 30))
+                    return
+            
+
         # Screen Transitions
         margin = 4
         changed = False
         if self.player.x < -margin:
             self.room_x -= 1
             self.player.x = W - self.player.width - 12
+            self.boss.x += W # Shift boss with room
             changed = True
         elif self.player.x > W - self.player.width + margin:
             self.room_x += 1
             self.player.x = 12
+            self.boss.x -= W # Shift boss with room
             changed = True
         
         if self.player.y < -margin:
             self.room_y -= 1
             self.player.y = H - self.player.height - 12
+            self.boss.y += H # Shift boss with room
             changed = True
         elif self.player.y > H + margin:
             self.room_y += 1
             self.player.y = 12
+            self.boss.y -= H # Shift boss with room
             changed = True
             
         if changed:
             self.generate_room(self.room_x, self.room_y)
             self.particles = []
         
+        if self.shake > 0:
+            self.shake -= 1
+        
         for orb in self.orbs:
             if orb.update(self.player):
+                self.collected_orbs += 1
+                self.collected_rooms.add((self.room_x, self.room_y)) # Persistence tracking
+                if self.collected_orbs >= 3 and self.state == STATE_PLAY:
+                    self.state = STATE_BOSS
+                    self.boss_countdown = 300 # 10 seconds at 30fps
                 self.shake = 2
                 pyxel.play(3, 2)
                 for _ in range(5):
                     self.particles.append(Particle(orb.x+4, orb.y+4, pyxel.rndf(-2, 2), pyxel.rndf(-2, 2), COLOR_ORB, 15))
-        
+
         for i in range(len(self.particles)-1, -1, -1):
             self.particles[i].update()
             if self.particles[i].life <= 0:
@@ -471,23 +696,85 @@ class App:
     def draw(self):
         pyxel.cls(COLOR_BG)
         
-        if not self.started:
+        if self.state == STATE_START:
             pyxel.text(40, 60, "CLICK TO START", pyxel.frame_count % 16)
+            return
+
+        if self.state == STATE_GAMEOVER:
+            pyxel.text(46, 60, "GAME OVER", 8)
+            pyxel.text(26, 75, "PRESS SPACE TO RETRY", 7)
+            return
+
+        if self.state == STATE_GAMECLEAR:
+            pyxel.text(42, 60, "GAME CLEAR!", 10)
+            pyxel.text(30, 75, "CONGRATULATIONS!", 7)
+            pyxel.text(26, 85, "PRESS SPACE TO RETRY", 6)
+            return
+            pyxel.text(48, 60, "GAME CLEAR!", 10)
+            pyxel.text(32, 70, "CONGRATULATIONS!", 7)
             return
         
         cam_x, cam_y = 0.0, 0.0
         if self.shake > 0:
             cam_x = float(pyxel.rndf(-self.shake, self.shake))
             cam_y = float(pyxel.rndf(-self.shake, self.shake))
-            self.shake -= 1
         pyxel.camera(cam_x, cam_y)
+
+        # Background (DRAW AFTER CLS, BEFORE BLTM)
+        random.seed(f"{self.room_x}_{self.room_y}_bg")
+        # Stars (REMOVED as per user request)
+        # Moon
+        pyxel.circ(105, 15, 6, 7)
+        pyxel.circ(103, 13, 5, COLOR_BG)
         
-        pyxel.bltm(0, 0, 0, 0, 0, W, H)
+        # Mountains (Vast Dark Silhouettes)
+        for layer in range(3):
+            random.seed(f"{self.room_x}_{self.room_y}_mtn_{layer}")
+            # Use darker colors distinct from Wall (1): 2 (Dark Purple), 5 (Dark Grey)
+            col = [2, 5, 2][layer] 
+            h_max = [15, 28, 45][layer] # Significantly taller
+            
+            # Very wide steps for broad mountains
+            step_w = 32
+            last_h = random.randint(h_max-10, h_max+10)
+            for x in range(0, W + step_w, step_w):
+                next_h = random.randint(h_max-10, h_max+10)
+                # Curve the transition for a very smooth organic feel
+                for i in range(step_w):
+                    t = i / step_w
+                    smooth_t = t * t * (3 - 2 * t)
+                    h = int(last_h * (1 - smooth_t) + next_h * smooth_t)
+                    # Use overdraw (+10) to ensure no gap at the bottom edge
+                    pyxel.rect(x + i, H - h, 1, h + 10, col)
+                last_h = next_h
+
+        pyxel.bltm(0, 0, 0, 0, 0, W, H, 0) # treated 0 as transparent
+        
+        # Special Exit at 0,0
+        if self.state == STATE_BOSS and self.room_x == 0 and self.room_y == 0:
+            pyxel.circ(W//2, H//2, 8 + pyxel.sin(pyxel.frame_count*10)*2, 11)
+            pyxel.circ(W//2, H//2, 4, 7)
+            pyxel.text(W//2-10, H//2-12, "EXIT", 7)
+
         for orb in self.orbs: orb.draw()
         for p in self.particles: p.draw()
-        self.player.draw()
+        if not self.player.is_dead:
+            self.player.draw()
+        if self.state in [STATE_BOSS, STATE_GAMEOVER_SEQ]:
+            self.boss.draw()
         
         pyxel.camera()
-        pyxel.text(4, 4, f"ROOM: {self.room_x},{self.room_y}", 7)
+        # HUD
+        color = 7 if self.collected_orbs < 3 else 10
+        pyxel.text(4, 4, f"ORBS: {self.collected_orbs}/3", color)
+        pyxel.text(4, 12, f"ROOM: {self.room_x},{self.room_y}", 13)
+        if self.state == STATE_BOSS:
+            if self.boss_countdown > 0:
+                sec = self.boss_countdown // 30
+                # Move to bottom: y=116 for text, y=122 for bar
+                pyxel.text(40, 116, f"BOSS IN: {sec}s", 8)
+                pyxel.rect(W//2-20, 122, 40 * (self.boss_countdown/300), 2, 8)
+            else:
+                pyxel.text(40, 120, "WARNING: BOSS ACTIVE!", 8)
 
 App()
