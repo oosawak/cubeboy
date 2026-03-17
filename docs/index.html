@@ -19,9 +19,13 @@
         <div class="hero-content">
             <h1 class="float-anim">CubeBoy</h1>
             <p>A minimalist precision platformer powered by Pyxel</p>
+            <p style="opacity: 0.7; margin-top: -1.5rem; margin-bottom: 2rem;">Built using Antigravity, Pyxel MCP, and Ace Step</p>
             <div class="hero-btns">
                 <a href="Cubeboy.html" target="_blank" class="btn btn-primary">Play Web Version</a>
                 <a href="https://github.com/oosawak/Cubeboy" target="_blank" class="btn btn-outline">GitHub Repo</a>
+                <button id="music-toggle" class="btn btn-outline music-btn" aria-label="Toggle Music">
+                    <span class="icon">🔈</span> <span class="text">Music: OFF</span>
+                </button>
             </div>
         </div>
     </section>
@@ -91,9 +95,15 @@
                         <span class="key-cap">X</span> or <span class="key-cap">V</span>
                     </div>
                 </div>
-                <div style="border-top: 1px solid rgba(255,255,255,0.1); padding-top: 1.5rem;">
-                    <p style="font-size: 1.1rem; color: #fff;">
-                        💡 <strong>Orbs can be collected while dashing.</strong>
+                <div style="border-top: 1px solid rgba(255,255,255,0.1); padding-top: 1.5rem; text-align: left; max-width: 500px; margin: 0 auto;">
+                    <p style="margin-bottom: 0.8rem; opacity: 0.9;">
+                        💨 <strong>Orbs can be collected while dashing.</strong>
+                    </p>
+                    <p style="margin-bottom: 0.8rem;">
+                        💡 <strong>Collect 3 Orbs</strong> to reveal the Exit Portal in the starting room.
+                    </p>
+                    <p style="margin-bottom: 0.8rem; color: #ff5555;">
+                        ⚠️ <strong>Warning:</strong> Collecting all orbs will awaken the <strong>BOSS</strong>. Escape quickly!
                     </p>
                 </div>
             </div>
@@ -101,11 +111,13 @@
     </section>
 
     <footer>
-        <div class="container" style="display: flex; justify-content: space-between; align-items: center; flex-wrap: wrap; gap: 10px;">
+        <div class="container" style="display: flex; justify-content: space-between; align-items: center; flex-wrap: wrap; gap: 20px;">
             <p>&copy; 2026 CubeBoy Dev Team. Built with <span style="color:red">❤</span> and Pyxel Engine.</p>
             <a href="https://github.com/oosawak/Cubeboy" target="_blank" style="color: rgba(255,255,255,0.6); text-decoration: none; font-size: 0.9rem; transition: color 0.3s;" onmouseover="this.style.color='#fff'" onmouseout="this.style.color='rgba(255,255,255,0.6)'">View on GitHub</a>
         </div>
     </footer>
+
+    <audio id="bgm-player" preload="auto"></audio>
 
     <script src="script.js"></script>
 </body>

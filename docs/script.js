@@ -36,4 +36,63 @@ document.addEventListener('DOMContentLoaded', () => {
             logo.style.filter = 'drop-shadow(0 0 15px rgba(0, 229, 255, 0.4))';
         });
     }
+    // BGM System
+    const bgmFiles = [
+        'BGM/ComfyUI_00001_.mp3',
+        'BGM/ComfyUI_00002_.mp3',
+        'BGM/ComfyUI_00003_.mp3',
+        'BGM/ComfyUI_00004_.mp3'
+    ];
+    
+    let currentTrackIndex = -1;
+    const audio = document.getElementById('bgm-player');
+    const musicBtn = document.getElementById('music-toggle');
+    const musicIcon = musicBtn.querySelector('.icon');
+    const musicText = musicBtn.querySelector('.text');
+    let isPlaying = false;
+
+    const updateUI = () => {
+        if (isPlaying) {
+            musicBtn.classList.add('playing');
+            musicIcon.textContent = '🔊';
+            musicText.textContent = 'Music: ON';
+        } else {
+            musicBtn.classList.remove('playing');
+            musicIcon.textContent = '🔈';
+            musicText.textContent = 'Music: OFF';
+        }
+    };
+
+    const playRandomTrack = () => {
+        let nextIndex;
+        do {
+            nextIndex = Math.floor(Math.random() * bgmFiles.length);
+        } while (nextIndex === currentTrackIndex && bgmFiles.length > 1);
+        
+        currentTrackIndex = nextIndex;
+        audio.src = bgmFiles[currentTrackIndex];
+        audio.play().catch(err => console.log("Playback failed:", err));
+        isPlaying = true;
+        updateUI();
+    };
+
+    musicBtn.addEventListener('click', () => {
+        if (!isPlaying) {
+            if (currentTrackIndex === -1) {
+                playRandomTrack();
+            } else {
+                audio.play();
+                isPlaying = true;
+                updateUI();
+            }
+        } else {
+            audio.pause();
+            isPlaying = false;
+            updateUI();
+        }
+    });
+
+    audio.addEventListener('ended', () => {
+        playRandomTrack();
+    });
 });
